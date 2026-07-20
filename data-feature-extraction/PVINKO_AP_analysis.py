@@ -1,7 +1,6 @@
 #%%
 """
 PVINKO Action Potential (AP) Tracking & Kinetics Pipeline
-========================================================
 Author: Rian Fritz D. Jalandoni
 
 This pipeline processes raw multi-sweep patch-clamp recordings to track kinetic 
@@ -26,12 +25,9 @@ from scipy.signal import find_peaks, butter, filtfilt
 from scipy.stats import kruskal, mannwhitneyu
 from tqdm import tqdm
 
-# Suppress system and library execution warnings
 warnings.filterwarnings('ignore')
 
-# ==============================================================================
-# 1. CORE PARAMETERS & DIRECTORY CONFIGURATION
-# ==============================================================================
+
 
 MAIN_PATH = Path('C:/Users/jalan/Documents/PhD/Side_Projects/PainProject/EPHYS/')
 ABF_DATA_PATH = MAIN_PATH / 'Abf Traces'
@@ -45,7 +41,7 @@ SPIKE_ORDER = ['1st spike', '3rd spike', '5th spike']
 SAVE_FIGURES = True
 
 # Signal Filtering & Extraction Thresholds
-V_THRESH = 0.0
+V_THRESH = -5.0
 efel.api.set_setting('Threshold', V_THRESH)
 
 FEATURES_TO_EXTRACT = [
@@ -67,9 +63,6 @@ AP_VERTICAL_LABELS = {
     'AHP depth from peak': 'AHP Depth (mV)'
 }
 
-# ==============================================================================
-# 2. DIGITAL SIGNAL PROCESSING & EXTRACTION UTILITIES
-# ==============================================================================
 
 def lowpass_filter(data, cutoff_freq=1000, fs=20000, order=4):
     """Applies a zero-phase forward-backward Butterworth lowpass filter."""
@@ -163,9 +156,7 @@ def extract_ap_waveforms(metadata_df, abf_dir):
     output_df.to_excel(SAVE_PATH / 'AP_spike_features_with_cKO.xlsx', index=False)
     return output_df
 
-# ==============================================================================
-# 4. KINETIC PLOTTING & STATISTICAL ANALYSIS ENGINE
-# ==============================================================================
+
 
 def plot_feature_across_spikes(df, feature, vertical_label, groups, colors_dict, ax=None):
     """Plots box-whisker distributions across sequential spikes with post-hoc brackets."""
@@ -263,9 +254,6 @@ def create_ap_feature_summary_grid(df, groups, colors_dict):
     plt.savefig(SAVE_PATH / "AP_Feature_Summary_Grid_PVKO.png", dpi=300, transparent=True)
     plt.show()
 
-# ==============================================================================
-# 5. EXCEL EXPORT SUMMARY UTILITY
-# ==============================================================================
 
 def generate_feature_summary_table(df, groups):
     """Compiles descriptive statistic metrics (Mean ± SEM) and Mann-Whitney P-values."""
@@ -302,39 +290,36 @@ def generate_feature_summary_table(df, groups):
     summary_df.to_excel(SAVE_PATH / "AP_Feature_Summary_Table.xlsx", index=False)
     return summary_df
 
-# ==============================================================================
-# 6. RUNTIME PIPELINE INTERFACE
-# ==============================================================================
 
-if __name__ == "__main__":
-    print("Executing AP Kinetic Extraction...")
-    EPHYS_meta = pd.read_excel(
-        MAIN_PATH / "EPHYS_data_astrocytes.xlsx",
-        converters={'Date': str, 'Cell_Number': str, 'Code': str}
-    )
-    # Standardize spaces and hyphens in column strings
-    EPHYS_meta.columns = EPHYS_meta.columns.str.strip().str.replace('-', '_').str.replace(' ', '_')
 
-    # 1. Processing and File Mapping
-    df_results = extract_ap_waveforms(EPHYS_meta, ABF_DATA_PATH)
+print("Executing AP Kinetic Extraction...")
+EPHYS_meta = pd.read_excel(
+    MAIN_PATH / "EPHYS_data_astrocytes.xlsx",
+    converters={'Date': str, 'Cell_Number': str, 'Code': str}
+)
+# Standardize spaces and hyphens in column strings
+EPHYS_meta.columns = EPHYS_meta.columns.str.strip().str.replace('-', '_').str.replace(' ', '_')
 
-    # 2. Rendering Graphics Panels
-    if not df_results.empty:
-        print("Rendering statistical distributions and figures...")
-        feature_columns = [c for c in df_results.columns if c not in ['Date', 'Code', 'Mouse_info', 'Spike']]
-        valid_features_list, valid_labels_list = filter_valid_ap_features(df_results, feature_columns)
+# 1. Processing and File Mapping
+df_results = extract_ap_waveforms(EPHYS_meta, ABF_DATA_PATH)
 
-        # Draw individual category boxplots
-        for feat, label_str in zip(valid_features_list, valid_labels_list):
-            plot_feature_across_spikes(df_results, feat, label_str, GROUPS_TO_COMPARE, GROUP_COLORS)
+# 2. Rendering Graphics Panels
+if not df_results.empty:
+    print("Rendering statistical distributions and figures...")
+    feature_columns = [c for c in df_results.columns if c not in ['Date', 'Code', 'Mouse_info', 'Spike']]
+    valid_features_list, valid_labels_list = filter_valid_ap_features(df_results, feature_columns)
 
-        # Generate structural summary canvas layout grid
-        create_ap_feature_summary_grid(df_results, GROUPS_TO_COMPARE, GROUP_COLORS)
+    # Draw individual category boxplots
+    for feat, label_str in zip(valid_features_list, valid_labels_list):
+        plot_feature_across_spikes(df_results, feat, label_str, GROUPS_TO_COMPARE, GROUP_COLORS)
 
-        # 3. Export Summary Matrices
-        print("Writing statistical calculation table records...")
-        stats_table = generate_feature_summary_table(df_results, GROUPS_TO_COMPARE)
-        print(stats_table.head(10))
-        print("\nAnalysis execution successfully completed.")
-    else:
-        print("Process aborted: Extracted feature array matrix contains no valid samples.")
+    # Generate structural summary canvas layout grid
+    create_ap_feature_summary_grid(df_results, GROUPS_TO_COMPARE, GROUP_COLORS)
+
+    # 3. Export Summary Matrices
+    print("Writing statistical calculation table records...")
+    stats_table = generate_feature_summary_table(df_results, GROUPS_TO_COMPARE)
+    print(stats_table.head(10))
+    print("\nAnalysis execution successfully completed.")
+else:
+    print("Process aborted: Extracted feature array matrix contains no valid samples.")
