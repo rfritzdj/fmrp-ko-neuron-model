@@ -30,4 +30,4 @@ pip install sbi   # optional, only for the SNPE pipeline
 ```
 
 ## Citation
-If you use this code, please cite [paper reference here].
+If you use this code, please cite Qiu, H., Jalandoni, R. F., Derham, A., Reinish, N., Chen, C., Vong, A., Cook, E. P., Krishnaswamy, A., Khadra, A., & Sharif-Naeini, R. (2026). Astrocytic FMRP regulates the function of spinal parvalbumin-expressing neurons in Fragile X Syndrome. Department of Physiology, McGill University, Montreal, QC, Canada..
