@@ -13,7 +13,7 @@ Extract summary statistics from a single voltage trace. Two categories:
 All features that can be computed will be; any that can't (e.g. fewer than
 2 spikes → no ISI metrics) come back as NaN. Downstream code is NaN-aware.
 
-One can also add the phase-space plot as a feature. It should be as straightforward as doing a 2D histogram.
+One can also add the phase-space plot as a feature. It should be as straightforward as doing a difference 2D histogram.
 
 """
 
