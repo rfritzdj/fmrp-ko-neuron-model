@@ -2,7 +2,7 @@
 03_channel_perturbation.py
 ==========================
 
-STEP 3 of the pipeline.
+By this time, the parameters are defined
 
 Loads the top-N WT representative parameter sets, sweeps each channel over
 multipliers from 0× to 4× baseline (Btot scaled by 1/3 since its buffering
@@ -24,9 +24,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 import efel
 import pyabf
 
-# =============================================================================
-# CONFIG
-# =============================================================================
+
 CSV_PATH  = Path('C:/Users/jalan/OneDrive/Desktop/PV_FRMP/astrocyte_KO/results/plots/PVKO/WT_representative_params_SNPE.csv')
 ABF_PATH  = Path('C:/Users/jalan/Documents/PhD/Side_Projects/PainProject/EPHYS/Abf Traces/20230622/0008.abf')
 SAVE_DIR  = Path('C:/Users/jalan/Documents/PhD/Side_Projects/PainProject/EPHYS/results/')
@@ -34,7 +32,7 @@ SAVE_DIR  = Path('C:/Users/jalan/Documents/PhD/Side_Projects/PainProject/EPHYS/r
 N_MODELS       = 30                      # how many top WT sets to sweep
 MULTIPLIERS    = np.arange(0.0, 4.2, 0.2)  # 0× to 4× baseline
 BTOT_SCALE     = 1.0 / 3.0               # Btot compression factor
-SKIP_GLEAK     = True                     # exclude gleak from sweep
+SKIP_GLEAK     = True                     # exclude gleak from sweep because of instability
 SWEEP_VK       = True
 VK_BASELINE    = -80.0
 VK_DELTA_RANGE = 20.0
@@ -43,9 +41,7 @@ THRESHOLD_V    = -10.0
 OUT_RAW_CSV = 'channel_perturbation_raw.csv'
 OUT_FIG     = 'channel_perturbation_bands.png'
 
-# =============================================================================
-# MODEL CONSTANTS
-# =============================================================================
+
 VNa, VK, VCa = 58.0, -80.0, 68.0
 Cm, pgamma, KD, F = 30.0, 0.01, 0.1, 0.0964853321
 mArea, d, Car = 3000.0, 0.1, 0.07
@@ -60,9 +56,6 @@ Abn3, Vbn3, Sbn3 = 0.34, -36.0, 13.965
 Va, Sa = 3.5, -11.4
 nk, ksk = 5.0, 0.8
 
-# =============================================================================
-# NUMBA SIMULATOR
-# =============================================================================
 @njit(cache=True)
 def vtrap(dV, S):
     x = dV / S
@@ -245,140 +238,131 @@ def evaluate_single_sweep(task_info):
     df['Cell_ID'] = cell_idx
     return df
 
-# =============================================================================
-# MAIN
-# =============================================================================
-if __name__ == "__main__":
-    # 1. Load top-N WT parameters
-    population_df = pd.read_csv(CSV_PATH).head(N_MODELS)
-    print(f"Loaded top {len(population_df)} parameter sets from {CSV_PATH.name}")
 
-    # 2. Load canonical protocol
-    abf = pyabf.ABF(str(ABF_PATH))
-    abf.setSweep(8)
-    Vdata, Idata, tspan = abf.sweepY, abf.sweepC, abf.sweepX * 1000.0
-    tspan = tspan - tspan[0]
-    stim_idx = np.where(Idata > 0)[0]
-    Vdata2 = gaussian_filter1d(Vdata, 10)
+# 1. Load top-N WT parameters
+population_df = pd.read_csv(CSV_PATH).head(N_MODELS)
 
-    V0 = Vdata2[0]
-    Vleak = Vdata2[0]
-    VK_base = VK_BASELINE
+# 2. Load canonical protocol
+abf = pyabf.ABF(str(ABF_PATH))
+abf.setSweep(8)
+Vdata, Idata, tspan = abf.sweepY, abf.sweepC, abf.sweepX * 1000.0
+tspan = tspan - tspan[0]
+stim_idx = np.where(Idata > 0)[0]
+Vdata2 = gaussian_filter1d(Vdata, 10)
 
-    tspan_arr = np.ascontiguousarray(tspan, dtype=np.float64)
-    Idata_arr = np.ascontiguousarray(Idata, dtype=np.float64)
+V0 = Vdata2[0]
+Vleak = Vdata2[0]
+VK_base = VK_BASELINE
 
-    print(f"📂 Protocol: {ABF_PATH.name}, Vleak={Vleak:.1f} mV, "
-          f"stim {tspan[stim_idx[0]]:.0f}–{tspan[stim_idx[-1]]:.0f} ms")
+tspan_arr = np.ascontiguousarray(tspan, dtype=np.float64)
+Idata_arr = np.ascontiguousarray(Idata, dtype=np.float64)
 
-    # Warm up JIT
-    print("Compiling Numba functions...")
-    dummy_y0 = np.array([V0, 0.5, 0.5, 0.5, 0.07])
-    _ = solve_pvin_rk4(dummy_y0, tspan_arr, Idata_arr,
-                       300.0, 15.0, 180.0, 8.0, 10.0, 3.0, 80.0, Vleak, VK_base)
-    print("Compilation ready.")
 
-    # 3. Assemble tasks
-    tasks = []
-    panel_list = [
-        ('gNa', 'gNa'), ('gKv1', 'gKv1'), ('gKv3', 'gKv3'),
-        ('gCa', 'gCa'), ('gSK', 'gSK'), ('gleak', 'gleak'),
-    ]
-    if SKIP_GLEAK:
-        panel_list = [p for p in panel_list if p[0] != 'gleak']
+# Warm up JIT
+print("Compiling Numba functions...")
+dummy_y0 = np.array([V0, 0.5, 0.5, 0.5, 0.07])
+_ = solve_pvin_rk4(dummy_y0, tspan_arr, Idata_arr,
+                   300.0, 15.0, 180.0, 8.0, 10.0, 3.0, 80.0, Vleak, VK_base)
 
-    for cell_idx, row in population_df.iterrows():
-        base_cond = {
-            'gNa': row['gNa'], 'gKv1': row['gKv1'], 'gKv3': row['gKv3'],
-            'gCa': row['gCa'], 'gSK': row['gSK'], 'gleak': row['gleak'],
-            'Btot': row['Btot']
-        }
-        y0 = np.array([V0, hmax(V0), n1max_fn(V0), n3max_fn(V0), ca2i0(V0, base_cond['gCa'])])
+# 3. Assemble tasks
+tasks = []
+panel_list = [
+    ('gNa', 'gNa'), ('gKv1', 'gKv1'), ('gKv3', 'gKv3'),
+    ('gCa', 'gCa'), ('gSK', 'gSK'), ('gleak', 'gleak'),
+]
+if SKIP_GLEAK:
+    panel_list = [p for p in panel_list if p[0] != 'gleak']
 
-        for ch_name, ch_key in panel_list:
-            sweep_vals = MULTIPLIERS * base_cond[ch_key]
-            tasks.append((cell_idx, ch_name, ch_key, sweep_vals, MULTIPLIERS,
-                          base_cond, y0, Vleak, VK_base, tspan_arr, Idata_arr, stim_idx))
+for cell_idx, row in population_df.iterrows():
+    base_cond = {
+        'gNa': row['gNa'], 'gKv1': row['gKv1'], 'gKv3': row['gKv3'],
+        'gCa': row['gCa'], 'gSK': row['gSK'], 'gleak': row['gleak'],
+        'Btot': row['Btot']
+    }
+    y0 = np.array([V0, hmax(V0), n1max_fn(V0), n3max_fn(V0), ca2i0(V0, base_cond['gCa'])])
 
-        # Btot: compressed range because buffering saturates quickly
-        btot_vals = (MULTIPLIERS * BTOT_SCALE) * base_cond['Btot']
-        tasks.append((cell_idx, 'Btot', 'Btot', btot_vals, MULTIPLIERS,
+    for ch_name, ch_key in panel_list:
+        sweep_vals = MULTIPLIERS * base_cond[ch_key]
+        tasks.append((cell_idx, ch_name, ch_key, sweep_vals, MULTIPLIERS,
                       base_cond, y0, Vleak, VK_base, tspan_arr, Idata_arr, stim_idx))
 
-        if SWEEP_VK:
-            VK_vals = VK_base + np.linspace(0.0, VK_DELTA_RANGE, len(MULTIPLIERS))
-            tasks.append((cell_idx, 'VK', 'VK', VK_vals, MULTIPLIERS,
-                          base_cond, y0, Vleak, VK_base, tspan_arr, Idata_arr, stim_idx))
+    # Btot: compressed range because buffering has a different direction of perturbations
+    btot_vals = (MULTIPLIERS * BTOT_SCALE) * base_cond['Btot']
+    tasks.append((cell_idx, 'Btot', 'Btot', btot_vals, MULTIPLIERS,
+                  base_cond, y0, Vleak, VK_base, tspan_arr, Idata_arr, stim_idx))
 
-    # 4. Parallel execution
-    print(f"Spawning parallel workers for {len(tasks)} sweep tasks...")
-    all_individual_runs = []
-    with ProcessPoolExecutor() as executor:
-        futures = {executor.submit(evaluate_single_sweep, task): task for task in tasks}
-        for future in tqdm(as_completed(futures), total=len(futures), desc="Sweeps"):
-            try:
-                df_result = future.result()
-                all_individual_runs.append(df_result)
-            except Exception as exc:
-                print(f"\n[ERROR] Task failed: {exc}")
-                traceback.print_exc()
+    if SWEEP_VK:
+        VK_vals = VK_base + np.linspace(0.0, VK_DELTA_RANGE, len(MULTIPLIERS))
+        tasks.append((cell_idx, 'VK', 'VK', VK_vals, MULTIPLIERS,
+                      base_cond, y0, Vleak, VK_base, tspan_arr, Idata_arr, stim_idx))
 
-    if len(all_individual_runs) == 0:
-        raise RuntimeError("All parallel workers failed.")
+# 4. Parallel execution
+all_individual_runs = []
+with ProcessPoolExecutor() as executor:
+    futures = {executor.submit(evaluate_single_sweep, task): task for task in tasks}
+    for future in tqdm(as_completed(futures), total=len(futures), desc="Sweeps"):
+        try:
+            df_result = future.result()
+            all_individual_runs.append(df_result)
+        except Exception as exc:
+            print(f"\n[ERROR] Task failed: {exc}")
+            traceback.print_exc()
 
-    # 5. Aggregate + save raw data
-    master_df = pd.concat(all_individual_runs, ignore_index=True)
-    os.makedirs(SAVE_DIR, exist_ok=True)
-    master_df.to_csv(SAVE_DIR / OUT_RAW_CSV, index=False)
-    print(f"💾 Raw data saved to {SAVE_DIR / OUT_RAW_CSV}")
+if len(all_individual_runs) == 0:
+    raise RuntimeError("All parallel workers failed.")
 
-    grouped = master_df.groupby(['Channel', 'Multiplier'])
-    mean_df = grouped[['Tau_f', 'Discharge_Time', 'Spike_Count', 'Adaptation_Index']].mean().reset_index()
-    sem_df  = grouped[['Tau_f', 'Discharge_Time', 'Spike_Count', 'Adaptation_Index']].agg(sem).reset_index()
+# 5. Aggregate + save raw data
+master_df = pd.concat(all_individual_runs, ignore_index=True)
+os.makedirs(SAVE_DIR, exist_ok=True)
+master_df.to_csv(SAVE_DIR / OUT_RAW_CSV, index=False)
+print(f"💾 Raw data saved to {SAVE_DIR / OUT_RAW_CSV}")
 
-    # 6. Plot
-    preferred_order = ['gNa', 'gKv1', 'gKv3', 'gCa', 'gSK', 'gleak', 'Btot', 'VK']
-    channel_order = [ch for ch in preferred_order if ch in master_df['Channel'].unique()]
+grouped = master_df.groupby(['Channel', 'Multiplier'])
+mean_df = grouped[['Tau_f', 'Discharge_Time', 'Spike_Count', 'Adaptation_Index']].mean().reset_index()
+sem_df  = grouped[['Tau_f', 'Discharge_Time', 'Spike_Count', 'Adaptation_Index']].agg(sem).reset_index()
 
-    metrics = [
-        ('Tau_f', r'$\tau_f$', True),
-        ('Discharge_Time', r'$t_d$', False),
-        ('Spike_Count', 'Spike Count', False),
-        ('Adaptation_Index', 'Adaptation Index', False),
-    ]
+# 6. Plot
+preferred_order = ['gNa', 'gKv1', 'gKv3', 'gCa', 'gSK', 'gleak', 'Btot', 'VK']
+channel_order = [ch for ch in preferred_order if ch in master_df['Channel'].unique()]
 
-    fig, axes = plt.subplots(len(metrics), len(channel_order),
-                              figsize=(3.5 * len(channel_order), 3.2 * len(metrics)))
-    if len(channel_order) == 1:
-        axes = axes.reshape(-1, 1)
+metrics = [
+    ('Tau_f', r'$\tau_f$', True),
+    ('Discharge_Time', r'$t_d$', False),
+    ('Spike_Count', 'Spike Count', False),
+    ('Adaptation_Index', 'Adaptation Index', False),
+]
 
-    for row, (col_name, ylabel, clip_to_1) in enumerate(metrics):
-        for col, ch in enumerate(channel_order):
-            ax = axes[row, col]
-            m_sub = mean_df[mean_df['Channel'] == ch].sort_values('Multiplier')
-            s_sub = sem_df[sem_df['Channel'] == ch].sort_values('Multiplier')
+fig, axes = plt.subplots(len(metrics), len(channel_order),
+                          figsize=(3.5 * len(channel_order), 3.2 * len(metrics)))
+if len(channel_order) == 1:
+    axes = axes.reshape(-1, 1)
 
-            x = m_sub['Multiplier']
-            y_mean = m_sub[col_name]
-            y_sem  = s_sub[col_name]
+for row, (col_name, ylabel, clip_to_1) in enumerate(metrics):
+    for col, ch in enumerate(channel_order):
+        ax = axes[row, col]
+        m_sub = mean_df[mean_df['Channel'] == ch].sort_values('Multiplier')
+        s_sub = sem_df[sem_df['Channel'] == ch].sort_values('Multiplier')
 
-            if clip_to_1:
-                y_mean = np.clip(y_mean, 0, 1)
+        x = m_sub['Multiplier']
+        y_mean = m_sub[col_name]
+        y_sem  = s_sub[col_name]
 
-            ax.plot(x, y_mean, marker='o', color='tab:blue', label='Mean')
-            ax.fill_between(x, y_mean - y_sem, y_mean + y_sem,
-                            color='tab:blue', alpha=0.2, label='SEM')
+        if clip_to_1:
+            y_mean = np.clip(y_mean, 0, 1)
 
-            if row == 0:
-                ax.set_title(ch)
-            if row == len(metrics) - 1:
-                ax.set_xlabel('$V_K$ absolute shift' if ch == 'VK' else 'Multiplier')
-            if col == 0:
-                ax.set_ylabel(ylabel)
-            ax.spines['top'].set_visible(False)
-            ax.spines['right'].set_visible(False)
+        ax.plot(x, y_mean, marker='o', color='tab:blue', label='Mean')
+        ax.fill_between(x, y_mean - y_sem, y_mean + y_sem,
+                        color='tab:blue', alpha=0.2, label='SEM')
 
-    plt.tight_layout()
-    plt.savefig(SAVE_DIR / OUT_FIG, dpi=300)
-    plt.show()
-    print(f"\n✅ Done. Figure saved to {SAVE_DIR / OUT_FIG}")
+        if row == 0:
+            ax.set_title(ch)
+        if row == len(metrics) - 1:
+            ax.set_xlabel('$V_K$ absolute shift' if ch == 'VK' else 'Multiplier')
+        if col == 0:
+            ax.set_ylabel(ylabel)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+
+plt.tight_layout()
+plt.savefig(SAVE_DIR / OUT_FIG, dpi=300)
+plt.show()
