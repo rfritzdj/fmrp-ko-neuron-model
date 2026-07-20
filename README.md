@@ -15,7 +15,7 @@ Single-compartment Hodgkin-Huxley model of a spinal parvalbumin interneuron. Inc
 ### `data-feature-extraction/`
 Extracts firing features from whole-cell patch-clamp recordings (ABF files) for statistical comparison between genotypes. Features include spike count, discharge time, adaptation index, frequency decay time constant, and single-spike shape metrics (AP peak, trough, and half-width).
 
-### `parameter-estimation/`
+### `snpe/`
 Population-level parameter inference pipeline. Given a cohort of PVN recordings, identifies parameter sets in the Hodgkin-Huxley model that reproduce the observed firing features. Two inference methods are provided:
 
 - **Direct ranking** (`snpe/02_direct_ranking.py`): ranks a broad prior sample of simulations by NaN-aware z-distance to cohort mean. Robust when the model cannot fully match all features.
