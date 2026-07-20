@@ -2,16 +2,14 @@
 02b_predictive_top_n.py
 =======================
 
-ALTERNATIVE STEP 2 (Path B, part 2 of 2).
+This step goes after the SNPE posterior calculation
 
-What it does
 ------------
 Loads the SNPE posterior produced by 02a, samples N parameter sets,
 re-simulates each, and picks the top-K closest to the cohort mean.
 
-Why this extra step
--------------------
-SNPE returns a continuous posterior (10k samples). The channel-
+
+SNPE returns a continuous posterior (N samples). The channel-
 perturbation script needs discrete representative sets to sweep. This
 script bridges that gap, and validates that the posterior samples
 actually produce cohort-like behaviour when re-simulated.
@@ -42,9 +40,6 @@ from features import compute_stats, STAT_NAMES
 
 warnings.filterwarnings('ignore')
 
-# =============================================================================
-# CONFIG
-# =============================================================================
 DATA_DIR = Path('C:/Users/jalan/OneDrive/Desktop/PV_FRMP/astrocyte_KO/results/plots/PVKO/')
 ROOT_DIR = Path('C:/Users/jalan/Documents/PhD/Side_Projects/PainProject/EPHYS/')
 ABF_DIR  = ROOT_DIR / 'Abf Traces'
@@ -72,9 +67,7 @@ ALL_PLOT_FEATURES = [
 ]
 PARAM_COLS = ['gNa', 'gKv1', 'gKv3', 'gCa', 'gSK', 'Btot', 'gleak']
 
-# =============================================================================
-# 1. LOAD CANONICAL PROTOCOL
-# =============================================================================
+
 meta = pd.read_excel(ROOT_DIR / "EPHYS_data_astrocytes.xlsx",
                      converters={'Date': str, 'Code': str})
 meta.columns = meta.columns.str.strip().str.replace('-', '_').str.replace(' ', '_')
@@ -95,9 +88,7 @@ _STIM_OFF_MS = float(_tspan_ms[stim_idx[-1]])
 print(f"📂 Canonical protocol: stim {_STIM_ON_MS:.0f}–{_STIM_OFF_MS:.0f} ms")
 warm_up_jit(_tspan_ms, _I_exp, SIM_VLEAK)
 
-# =============================================================================
-# 2. SIMULATOR HELPERS
-# =============================================================================
+
 def simulate_with_trace(theta):
     """Return (V, features) for one parameter dict."""
     try:
@@ -113,9 +104,7 @@ def simulate_with_trace(theta):
 def simulate_features_only(theta):
     return simulate_with_trace(theta)[1]
 
-# =============================================================================
-# 3. LOAD POSTERIOR, SAMPLE, RE-SIMULATE
-# =============================================================================
+
 posterior_df = pd.read_csv(DATA_DIR / f"SNPE_posterior_{COHORT_FILTER}.csv")
 print(f"\nLoaded {len(posterior_df)} SNPE posterior samples.")
 
@@ -124,18 +113,14 @@ idx = rng.choice(len(posterior_df),
                  size=min(N_SAMPLES_FROM_POSTERIOR, len(posterior_df)),
                  replace=False)
 draws = posterior_df.iloc[idx].reset_index(drop=True)
-print(f"Re-simulating {len(draws)} posterior draws to validate behaviour...")
 
 results = Parallel(n_jobs=N_JOBS, verbose=2)(
     delayed(simulate_features_only)(draws.iloc[i].to_dict())
     for i in range(len(draws)))
 sim_full = pd.concat([draws.reset_index(drop=True),
                       pd.DataFrame(results)], axis=1)
-print(f"Viable (≥2 spikes): {(sim_full['spike_count'] >= 2).sum()} / {len(sim_full)}")
 
-# =============================================================================
-# 4. RANK BY NAN-AWARE Z-DISTANCE TO COHORT MEAN
-# =============================================================================
+
 real_df = pd.read_csv(DATA_DIR / f"feasibility_real_{COHORT_FILTER.lower()}.csv")
 target = {f: {'mean': float(np.nanmean(real_df[f].values)),
               'sem':  float(sem(real_df[f].dropna()))}
@@ -146,7 +131,6 @@ required = [f for f in ['spike_count', 'adapt_idx', 'discharge_time_s',
             if f in target]
 valid = sim_full.dropna(subset=required).copy()
 valid = valid[valid['spike_count'] >= 3].copy()
-print(f"\nViable for ranking: {len(valid)}")
 
 feature_vals = np.column_stack([valid[f].values for f in target])
 means_arr    = np.array([target[f]['mean'] for f in target])
@@ -161,27 +145,16 @@ print(f"\nTop {len(top)} SNPE-derived representative sets "
 
 out_csv = DATA_DIR / f"{COHORT_FILTER}_representative_params_SNPE.csv"
 top.to_csv(out_csv, index=False)
-print(f"💾 Saved to {out_csv}")
 
-# =============================================================================
-# 5. FEATURE REPRODUCTION REPORT
-# =============================================================================
-print(f"\n{'='*72}")
-print(f"FEATURE REPRODUCTION (top-{len(top)} from SNPE posterior)")
-print(f"{'='*72}")
-print(f"{'feature':18s}  {'cohort mean±SEM':>18s}  {'top-N mean±std':>20s}")
-print("-" * 72)
 for f in ALL_PLOT_FEATURES:
     if f not in real_df.columns or real_df[f].notna().sum() < 3: continue
     real_m = real_df[f].mean(); real_s = sem(real_df[f].dropna())
     sim_m  = top[f].mean();     sim_s  = top[f].std()
     tag = "[fit]" if f in DISTANCE_FEATURES else "[held]"
     print(f"{f:18s}  {real_m:8.3f}±{real_s:6.3f}  {sim_m:8.3f}±{sim_s:6.3f}  {tag}")
-print(f"{'='*72}\n")
 
-# =============================================================================
-# 6. PREDICTIVE CHECK PLOT
-# =============================================================================
+
+
 plot_feats = [f for f in ALL_PLOT_FEATURES
               if f in sim_full.columns and real_df[f].notna().sum() >= 3]
 n_cols = 4; n_rows = int(np.ceil(len(plot_feats) / n_cols))
@@ -209,13 +182,10 @@ fig.suptitle(f"SNPE predictive check vs {COHORT_FILTER} cohort", fontweight='bol
 plt.tight_layout()
 plt.savefig(DATA_DIR / f"SNPE_predictive_{COHORT_FILTER}.png", dpi=150)
 plt.show()
-plt.close()
 
-# =============================================================================
-# 7. TOP-6 V TRACES
-# =============================================================================
+
 n_to_plot = min(N_TRACES_TO_PLOT, len(top))
-print(f"\n📈 Re-simulating top {n_to_plot} for V-trace plots...")
+
 trace_results = Parallel(n_jobs=N_JOBS, verbose=0)(
     delayed(simulate_with_trace)(top.iloc[i].to_dict()) for i in range(n_to_plot))
 
@@ -235,6 +205,4 @@ fig.suptitle(f"Top-{n_to_plot} SNPE-derived parameter sets ({COHORT_FILTER})",
 plt.tight_layout()
 plt.savefig(DATA_DIR / f"SNPE_traces_{COHORT_FILTER}.png", dpi=150)
 plt.show()
-plt.close()
 
-print(f"\n✅ Done.")
