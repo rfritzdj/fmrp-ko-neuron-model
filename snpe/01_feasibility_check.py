@@ -2,13 +2,13 @@
 01_feasibility_check.py
 =======================
 
-STEP 1 of the pipeline.
+This pipeline is to check if there is a distribution of parameters for the model that can generate the population level features.
 
-What it does
 ------------
+Pipeline: 
 1. Loads a canonical current-injection protocol from one real ABF file
-2. Draws 20,000 parameter sets from a broad log-uniform prior
-3. Simulates each, computes 10 summary features
+2. Draws 20000 parameter sets from a broad log-uniform prior but uniform for calcium buffer
+3. Simulates each, computes summary features
 4. Extracts the same features from every real WT cell
 5. Saves both to CSV for downstream analysis
 
@@ -19,7 +19,7 @@ Output
   feasibility_marginals.png: histograms of sim vs real per feature
   feasibility_pairwise.png : pairwise scatter of 5 key features
 
-Runtime: ~3-8 minutes with N_JOBS=8 (~16 GB RAM).
+
 """
 
 import numpy as np
@@ -65,9 +65,6 @@ PRIOR = {
     'gleak': ('lin', 0.5,   5.0),     # passive leak
 }
 
-# =============================================================================
-# 1. LOAD CANONICAL PROTOCOL
-# =============================================================================
 # All real cells in this dataset were recorded with the same step protocol on
 # sweep 8 (200 pA × 1 s). We load that protocol from one ABF and use it as
 # the input current for every simulation, so the simulated cohort is directly
@@ -97,7 +94,7 @@ def load_canonical_protocol():
     stim_idx = np.where(I > 1e-3)[0]
     stim_on  = float(t_ms[stim_idx[0]])
     stim_off = float(t_ms[stim_idx[-1]])
-    print(f"📂 Canonical protocol: {abf_path.name}, stim {stim_on:.0f}–{stim_off:.0f} ms, "
+    print(f"Canonical protocol: {abf_path.name}, stim {stim_on:.0f}–{stim_off:.0f} ms, "
           f"dt {t_ms[1]-t_ms[0]:.3f} ms")
     return (np.ascontiguousarray(t_ms, dtype=np.float64),
             np.ascontiguousarray(I,    dtype=np.float64),
@@ -106,9 +103,6 @@ def load_canonical_protocol():
 _tspan_ms, _I_exp, _STIM_ON_MS, _STIM_OFF_MS, _meta = load_canonical_protocol()
 warm_up_jit(_tspan_ms, _I_exp, SIM_VLEAK)
 
-# =============================================================================
-# 2. SAMPLE FROM PRIOR
-# =============================================================================
 def sample_prior(n, seed=0):
     """Draw n parameter sets from the log/linear-uniform prior."""
     rng = np.random.default_rng(seed)
@@ -120,12 +114,9 @@ def sample_prior(n, seed=0):
             samples[name] = rng.uniform(lo, hi, n)
     return pd.DataFrame(samples)
 
-print(f"\n📦 Sampling {N_SAMPLES} parameter sets from prior...")
 theta_df = sample_prior(N_SAMPLES, seed=0)
 
-# =============================================================================
-# 3. SIMULATE EACH PARAM SET, EXTRACT FEATURES
-# =============================================================================
+
 def simulate_one(theta):
     """Run one simulation with parameters `theta` (dict) and return its features."""
     try:
@@ -138,8 +129,7 @@ def simulate_one(theta):
     except Exception:
         return {k: np.nan for k in STAT_NAMES}
 
-print(f"\n⚡ Simulating {N_SAMPLES} param sets in parallel (n_jobs={N_JOBS})...")
-# Batched to avoid joblib pickling out-of-memory with very large N
+
 BATCH = 2000
 all_results = []
 for start in range(0, N_SAMPLES, BATCH):
@@ -151,10 +141,7 @@ for start in range(0, N_SAMPLES, BATCH):
 sim_df = pd.concat([theta_df.reset_index(drop=True),
                     pd.DataFrame(all_results)], axis=1)
 
-# =============================================================================
-# 4. EXTRACT FEATURES FROM REAL CELLS
-# =============================================================================
-print(f"\n🧬 Extracting features from real {COHORT_FILTER} cohort...")
+
 rows = []
 for r in tqdm(_meta.itertuples(), total=len(_meta), desc=f"Real {COHORT_FILTER}"):
     path = ABF_DIR / r.Date / f"{r.Code}.abf"
@@ -174,23 +161,18 @@ for r in tqdm(_meta.itertuples(), total=len(_meta), desc=f"Real {COHORT_FILTER}"
 real_df = pd.DataFrame(rows)
 print(f"   Got {len(real_df)} real cells.")
 
-# =============================================================================
-# 5. SAVE EVERYTHING
-# =============================================================================
 sim_df.to_csv(SAVE_DIR / "feasibility_sims_ko.csv", index=False)
 real_df.to_csv(SAVE_DIR / f"feasibility_real_{COHORT_FILTER.lower()}.csv", index=False)
-print(f"\n💾 Saved sims and real cohort to {SAVE_DIR}")
+print(f"\n Saved sims and real cohort to {SAVE_DIR}")
 
-# =============================================================================
-# 6. DIAGNOSTIC PLOTS
-# =============================================================================
+
 spiking = sim_df.dropna(subset=['spike_count']).copy()
 spiking = spiking[spiking['spike_count'] >= 2]
 print(f"   Viable sims (≥2 spikes): {len(spiking)} / {N_SAMPLES} "
       f"({100*len(spiking)/N_SAMPLES:.1f}%)")
 
 # Per-feature: how often is a simulation inside the cohort's 5th–95th band?
-print(f"\n🎯 Per-feature overlap (sims falling in real {COHORT_FILTER} 5–95% range):")
+print(f"\n Per-feature overlap (sims falling in real {COHORT_FILTER} 5–95% range):")
 for s in STAT_NAMES:
     if s not in real_df.columns or real_df[s].notna().sum() < 3:
         continue
@@ -222,6 +204,4 @@ fig.suptitle(f"Feasibility check: simulated cloud vs {COHORT_FILTER} cohort",
 plt.tight_layout()
 plt.savefig(SAVE_DIR / "feasibility_marginals_ko.png", dpi=150)
 plt.show()
-plt.close()
 
-print(f"\n✅ Done.")
