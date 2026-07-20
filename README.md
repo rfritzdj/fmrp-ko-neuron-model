@@ -1,7 +1,9 @@
 # FMRP-KO PVN Modeling
 
 Code accompanying the paper:
-**"Astrocytic FMRP regulates spinal parvalbumin neuron development in Fragile X Syndrome"**
+**"Astrocytic FMRP regulates the function of spinal parvalbumin-expressing neurons in Fragile X Syndrome"**
+
+Paper link: https://www.biorxiv.org/content/10.64898/2026.07.17.737291v1
 
 This repository contains the computational models and analysis pipelines used to identify candidate ionic mechanisms underlying the altered firing phenotype of spinal parvalbumin interneurons (PVNs) in FMRP knockout mice.
 
