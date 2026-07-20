@@ -2,9 +2,9 @@
 02a_snpe_inference.py
 =====================
 
-ALTERNATIVE STEP 2 (Path B, part 1 of 2).
+ALTERNATIVE STEP To Direct Ranking (Path B, part 1 of 2).
 
-What it does
+
 ------------
 Trains a normalizing flow (SNPE) on the feasibility simulation cloud to
 approximate p(theta | features). Conditions on the WT cohort's mean
@@ -76,9 +76,7 @@ FEATURES = [
 
 N_POSTERIOR_SAMPLES = 10000
 
-# =============================================================================
-# 1. LOAD CACHED DATA
-# =============================================================================
+
 sim_df  = pd.read_csv(SAVE_DIR / "feasibility_sims_ko.csv")
 real_df = pd.read_csv(SAVE_DIR / f"feasibility_real_{COHORT_FILTER.lower()}.csv")
 print(f"Loaded {len(sim_df)} sims and {len(real_df)} real {COHORT_FILTER} cells.")
@@ -89,9 +87,7 @@ sim = sim[sim['spike_count'] >= 2]
 sim = sim.dropna(subset=FEATURES + PARAM_COLS).reset_index(drop=True)
 print(f"Viable sims with all features defined: {len(sim)}")
 
-# =============================================================================
-# 2. BUILD (theta, x) TENSORS IN TRANSFORMED SPACE
-# =============================================================================
+
 # Log-priors were sampled in log space, so the network should also see them
 # in log space. We convert back to linear after sampling the posterior.
 theta_cols = []
@@ -105,9 +101,7 @@ x     = torch.tensor(sim[FEATURES].values, dtype=torch.float32)
 
 print(f"theta shape: {tuple(theta.shape)}, x shape: {tuple(x.shape)}")
 
-# =============================================================================
-# 3. PRIOR IN TRANSFORMED SPACE
-# =============================================================================
+
 lows, highs = [], []
 for p in PARAM_COLS:
     scale, lo, hi = PRIOR[p]
@@ -117,9 +111,6 @@ for p in PARAM_COLS:
 prior = BoxUniform(low=torch.tensor(lows,  dtype=torch.float32),
                    high=torch.tensor(highs, dtype=torch.float32))
 
-# =============================================================================
-# 4. TRAIN SNPE
-# =============================================================================
 print("\n🧠 Training SNPE on the feasibility cloud...")
 inference = SNPE(prior=prior)
 inference = inference.append_simulations(theta, x)
@@ -127,9 +118,7 @@ density_estimator = inference.train(show_train_summary=True)
 posterior = inference.build_posterior(density_estimator)
 print("✅ Training complete.")
 
-# =============================================================================
-# 5. CONDITION ON COHORT MEAN, SAMPLE
-# =============================================================================
+
 x_obs = torch.tensor(real_df[FEATURES].mean().values, dtype=torch.float32)
 print(f"\n📌 Conditioning on {COHORT_FILTER} cohort mean:")
 for f, v in zip(FEATURES, x_obs.numpy()):
@@ -148,9 +137,7 @@ out_csv = SAVE_DIR / f"SNPE_posterior_{COHORT_FILTER}.csv"
 posterior_df.to_csv(out_csv, index=False)
 print(f"💾 Saved to {out_csv}")
 
-# =============================================================================
-# 6. MARGINAL POSTERIORS
-# =============================================================================
+
 fig, axes = plt.subplots(2, 4, figsize=(16, 7))
 for ax, p in zip(axes.flat, PARAM_COLS):
     prior_vals = sim[p].values
@@ -178,9 +165,7 @@ plt.savefig(SAVE_DIR / f"SNPE_marginals_{COHORT_FILTER}.png", dpi=150)
 plt.show()
 plt.close()
 
-# =============================================================================
-# 7. PAIRWISE JOINT (hexbin)
-# =============================================================================
+
 labels = [f"log10({p})" if p in PARAM_LOG else p for p in PARAM_COLS]
 n = len(PARAM_COLS)
 fig, axes = plt.subplots(n, n, figsize=(2.0*n, 2.0*n))
@@ -203,9 +188,7 @@ plt.savefig(SAVE_DIR / f"SNPE_pairwise_{COHORT_FILTER}.png", dpi=150)
 plt.show()
 plt.close()
 
-# =============================================================================
-# 8. SUMMARY TABLE + CONSTRAINT STRENGTH
-# =============================================================================
+
 print(f"\n{'='*72}")
 print(f"SNPE POSTERIOR SUMMARY (N={N_POSTERIOR_SAMPLES})")
 print(f"{'='*72}")
