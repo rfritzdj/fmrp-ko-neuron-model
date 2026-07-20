@@ -4,6 +4,8 @@
 
 ALTERNATIVE STEP To Direct Ranking (Path B, part 1 of 2).
 
+After this, we can go to predictive top n code to find the top viable samples
+
 
 ------------
 Trains a normalizing flow (SNPE) on the feasibility simulation cloud to
