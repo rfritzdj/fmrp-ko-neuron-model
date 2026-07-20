@@ -24,7 +24,7 @@ from scipy.stats import linregress
 
 # eFEL needs a "spike begin" voltage threshold. -10 mV is permissive enough
 # for cells with junction-potential offsets while still catching real APs.
-EFEL_THRESH = -10.0
+EFEL_THRESH = -5.0
 V_THRESH    = -5.0      # for our own find_peaks call
 LP_CUTOFF   = 2000.0    # low-pass before spike detection, to match
 LP_ORDER    = 4         # the experimental filtering chain
