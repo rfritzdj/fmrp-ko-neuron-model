@@ -3,13 +3,6 @@
 PVKO Spike Train Analysis Pipeline
 ==================================
 Author: Rian Fritz D. Jalandoni
-
-
-This module provides a standardized pipeline for extracting and analyzing 
-electrophysiological intrinsic properties and spike-train features from Axon 
-Binary Format (.abf) files. It supports feature extraction via eFEL, localized 
-frequency decay fitting, non-parametric statistical testing, and publication-quality 
-visualization exports.
 """
 
 from itertools import combinations
@@ -29,14 +22,8 @@ from scipy.signal import find_peaks, butter, filtfilt
 from scipy.stats import mannwhitneyu, kruskal, linregress
 from tqdm import tqdm
 
-# Suppress non-critical user and library warnings for stable console outputs
 warnings.filterwarnings('ignore')
 
-# ==============================================================================
-# 1. GLOBAL CONFIGURATIONS & PARAMETERS
-# ==============================================================================
-
-# Global directory paths for experimental metadata, raw ABF traces, and output figures
 ROOT_DIR = Path('C:/Users/jalan/Documents/PhD/Side_Projects/PainProject/EPHYS/')
 ABF_DIR = ROOT_DIR / 'Abf Traces'
 SAVE_DIR = Path('C:/Users/jalan/OneDrive/Desktop/PV_FRMP/astrocyte_KO/results/plots/PVKO/')
@@ -55,16 +42,12 @@ BUTTER_ORDER = 4       # Butterworth filter order
 # Initialize eFEL global configurations
 efel.api.set_setting('Threshold', V_THRESH)
 
-# Target electrophysiological features extracted via eFEL
 SPIKE_TRAIN_FEATURES = [
     'mean_frequency', 'ISI_CV', 'adaptation_index',
     'time_to_first_spike', 'spike_count', 'inv_ISI_values',
     'depolarized_base', 'ohmic_input_resistance', 'peak_time'
 ]
 
-# ==============================================================================
-# 2. STATISTICAL & UTILITY FUNCTIONS
-# ==============================================================================
 
 def safe_get(features_dict, key, default=np.nan):
     """Safely extracts a single feature scalar from the eFEL output dictionary.
@@ -377,9 +360,7 @@ def process_ephys_data(df_meta, abf_dir):
     df_res.to_excel(SAVE_DIR / "Spike_Train_Features_aKO2.xlsx", index=False)
     return df_res
 
-# ==============================================================================
-# 5. GRAPHICS COMPOSITION & ANALYSIS EXPORTS
-# ==============================================================================
+
 
 def plot_feature_boxplot(df, feature, ax=None, order=None, palette=None, save_fig=False):
     """Generates an individual publication-grade boxplot with overlaying datapoints.
@@ -490,48 +471,43 @@ def print_significance_summary(df, order):
             
     print(f"\n{'='*80}")
 
-# ==============================================================================
-# 6. PIPELINE RUNTIME EXECUTION
-# ==============================================================================
+# Load metadata file containing cellular recording metadata
+EPHYS_meta = pd.read_excel(
+    ROOT_DIR / "EPHYS_data_astrocytes.xlsx",
+    converters={'Date': str, 'Cell_Number': str, 'Code': str}
+)
 
-if __name__ == "__main__":
-    # Load metadata file containing cellular recording metadata
-    EPHYS_meta = pd.read_excel(
-        ROOT_DIR / "EPHYS_data_astrocytes.xlsx",
-        converters={'Date': str, 'Cell_Number': str, 'Code': str}
+# Standardize column header strings to prevent structural spacing index runtime breaks
+EPHYS_meta.columns = EPHYS_meta.columns.str.strip().str.replace('-', '_').str.replace(' ', '_')
+
+# Run processing pipeline execution
+df_spike_train = process_ephys_data(EPHYS_meta, ABF_DIR)
+
+if df_spike_train.empty:
+    print("Data extraction failed. Returned cell array matrix contains 0 records.")
+else:
+    print("Feature extraction successfully processed.")
+    
+    # Save individual property graphs
+    for column_feature in df_spike_train.columns:
+        if column_feature not in ['Date', 'Code', 'Mouse_info'] and not df_spike_train[column_feature].isna().all():
+            plot_feature_boxplot(
+                df_spike_train, 
+                column_feature, 
+                order=GROUPS, 
+                palette=[GROUP_COLORS[g] for g in GROUPS], 
+                save_fig=True
+            )
+            
+    # Save structural multi-panel summary canvas grid
+    create_summary_grid(
+        df_spike_train, 
+        GROUPS, 
+        [GROUP_COLORS[g] for g in GROUPS], 
+        ncols=6, 
+        nrows=2,
+        save_fig=True
     )
     
-    # Standardize column header strings to prevent structural spacing index runtime breaks
-    EPHYS_meta.columns = EPHYS_meta.columns.str.strip().str.replace('-', '_').str.replace(' ', '_')
-    
-    # Run processing pipeline execution
-    df_spike_train = process_ephys_data(EPHYS_meta, ABF_DIR)
-    
-    if df_spike_train.empty:
-        print("Data extraction failed. Returned cell array matrix contains 0 records.")
-    else:
-        print("Feature extraction successfully processed.")
-        
-        # Save individual property graphs
-        for column_feature in df_spike_train.columns:
-            if column_feature not in ['Date', 'Code', 'Mouse_info'] and not df_spike_train[column_feature].isna().all():
-                plot_feature_boxplot(
-                    df_spike_train, 
-                    column_feature, 
-                    order=GROUPS, 
-                    palette=[GROUP_COLORS[g] for g in GROUPS], 
-                    save_fig=True
-                )
-                
-        # Save structural multi-panel summary canvas grid
-        create_summary_grid(
-            df_spike_train, 
-            GROUPS, 
-            [GROUP_COLORS[g] for g in GROUPS], 
-            ncols=6, 
-            nrows=2,
-            save_fig=True
-        )
-        
-        # Display statistical analysis report summary to terminal console
-        print_significance_summary(df_spike_train, GROUPS)
+    # Display statistical analysis report summary to terminal console
+    print_significance_summary(df_spike_train, GROUPS)
