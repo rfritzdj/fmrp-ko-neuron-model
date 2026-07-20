@@ -7,9 +7,7 @@ parameters (the maximal conductances + total Ca buffer):
 
     gNa, gKv1, gKv3, gCa, gSK, gleak, Btot
 
-All kinetics are fixed (parameters Aah, Sah, etc. are not fit). They were already fit by hand due to the complexity of the model. The model
-is implemented in Numba for ~50× speedup over pure Python; one 2.5-s
-simulation at dt = 0.02 ms takes ~25 ms after JIT warm-up.
+All kinetics are fixed (parameters Aah, Sah, etc. are not fit). They were already fit by hand due to the complexity of the model. The model simulation at dt = 0.02 ms takes ~25 ms after JIT warm-up.
 
 Used by every script in this pipeline. The only thing that changes
 between scripts is the input current waveform.
